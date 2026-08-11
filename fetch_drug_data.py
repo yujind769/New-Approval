@@ -21,9 +21,9 @@ import xml.etree.ElementTree as ET
 
 from openpyxl import Workbook
 
-BASE_URL = "https://apis.data.go.kr/1471000/DrugPrdtPrmsnInfoService07/getDrugPrdtPrmsnDtlInq05"
+BASE_URL = "https://apis.data.go.kr/1471000/DrugPrdtPrmsnInfoService07/getDrugPrdtPrmsnDtlInq06"
 DEFAULT_SERVICE_KEY = "0b9kSMyZHTA6Vzot3jmEbmeaUS4YpWUvBeMqSRuekpFY7lKRmQpRCirnEwN5nACMpC2b9X5ChC9Cz3xIu8P8dQ=="
-NUM_OF_ROWS = 1000
+NUM_OF_ROWS = 500
 TARGET_CLASS = "일반의약품"
 TARGET_PERMIT_PREFIX = "202607"
 MAX_RETRIES = 4
