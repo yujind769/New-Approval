@@ -43,7 +43,7 @@ def fetch_page(service_key: str, page_no: int, num_of_rows: int) -> ET.Element:
     last_err = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            with urllib.request.urlopen(url, timeout=30) as resp:
+            with urllib.request.urlopen(url, timeout=60) as resp:
                 data = resp.read()
             return ET.fromstring(data)
         except Exception as e:  # 네트워크 오류/타임아웃 등
