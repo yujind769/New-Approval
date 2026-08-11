@@ -11,6 +11,10 @@
 네트워크 오류 등으로 중간에 중단되어도 다시 실행하면 이미 받은 페이지는
 건너뛰고 이어서 받는다(재시작 시 처음부터 다시 받지 않음).
 
+일부 구간은 항목 내용(설명 텍스트 등)이 유난히 길어 numOfRows=500 요청이
+게이트웨이 타임아웃(504)을 유발할 수 있다. 이런 경우 자동으로 더 작은
+단위(100 -> 20)로 쪼개어 같은 offset 범위를 재요청한다.
+
 사용법:
     python3 fetch_drug_data.py [--service-key KEY] [--out OUTPUT.xlsx] [--cache CACHE.jsonl]
 
@@ -31,14 +35,16 @@ DEFAULT_SERVICE_KEY = "0b9kSMyZHTA6Vzot3jmEbmeaUS4YpWUvBeMqSRuekpFY7lKRmQpRCirnE
 NUM_OF_ROWS = 500
 TARGET_CLASS = "일반의약품"
 TARGET_PERMIT_PREFIX = "202607"
-MAX_RETRIES = 8
+MAX_RETRIES = 3
 REQUEST_TIMEOUT_SEC = 90
 RETRY_DELAY_SEC = 3
-RETRY_DELAY_CAP_SEC = 30
+RETRY_DELAY_CAP_SEC = 20
+FALLBACK_CHUNK_SIZES = [100, 20]  # numOfRows가 실패하면 순서대로 더 작게 쪼개서 재시도
+
+_known_total_count = None
 
 
-def fetch_page(service_key: str, page_no: int, num_of_rows: int) -> ET.Element:
-    """지정 페이지를 XML로 요청하고 루트 Element를 반환한다."""
+def _request_xml(service_key: str, page_no: int, num_of_rows: int) -> ET.Element:
     params = {
         "serviceKey": service_key,
         "pageNo": str(page_no),
@@ -46,20 +52,52 @@ def fetch_page(service_key: str, page_no: int, num_of_rows: int) -> ET.Element:
         "type": "xml",
     }
     url = f"{BASE_URL}?{urllib.parse.urlencode(params)}"
+    with urllib.request.urlopen(url, timeout=REQUEST_TIMEOUT_SEC) as resp:
+        data = resp.read()
+    return ET.fromstring(data)
 
+
+def fetch_page_raw(service_key: str, page_no: int, num_of_rows: int) -> ET.Element:
+    """지정 pageNo/numOfRows 조합을 재시도와 함께 요청한다 (사이즈 축소는 하지 않음)."""
+    global _known_total_count
     last_err = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            with urllib.request.urlopen(url, timeout=REQUEST_TIMEOUT_SEC) as resp:
-                data = resp.read()
-            return ET.fromstring(data)
-        except Exception as e:  # 네트워크 오류/타임아웃 등
+            root = _request_xml(service_key, page_no, num_of_rows)
+            if _known_total_count is None:
+                _known_total_count = get_total_count(root)
+            return root
+        except Exception as e:  # 네트워크 오류/타임아웃/504 등
             last_err = e
             if attempt < MAX_RETRIES:
                 delay = min(RETRY_DELAY_SEC * attempt, RETRY_DELAY_CAP_SEC)
-                print(f"  페이지 {page_no} 요청 실패({attempt}/{MAX_RETRIES}): {e} -> {delay}초 후 재시도")
+                print(f"  pageNo={page_no} numOfRows={num_of_rows} 요청 실패({attempt}/{MAX_RETRIES}): {e} -> {delay}초 후 재시도")
                 time.sleep(delay)
-    raise RuntimeError(f"페이지 {page_no} 요청 실패 (재시도 {MAX_RETRIES}회 초과): {last_err}")
+    raise RuntimeError(f"pageNo={page_no} numOfRows={num_of_rows} 요청 실패 (재시도 {MAX_RETRIES}회 초과): {last_err}")
+
+
+def fetch_range_items(service_key: str, offset: int, length: int, num_of_rows: int, chunk_idx: int = 0):
+    """[offset, offset+length) 범위의 항목을 numOfRows 크기로 받는다.
+    실패하면 FALLBACK_CHUNK_SIZES의 더 작은 크기로 같은 범위를 재요청한다."""
+    assert offset % num_of_rows == 0
+    page_no = offset // num_of_rows + 1
+    try:
+        root = fetch_page_raw(service_key, page_no, num_of_rows)
+        return parse_items(root)
+    except Exception as e:
+        if chunk_idx >= len(FALLBACK_CHUNK_SIZES):
+            raise
+        smaller = FALLBACK_CHUNK_SIZES[chunk_idx]
+        print(f"  offset={offset} length={length} numOfRows={num_of_rows} 실패 -> numOfRows={smaller}로 축소 재시도: {e}")
+        items = []
+        covered = 0
+        while covered < length:
+            sub_items = fetch_range_items(service_key, offset + covered, smaller, smaller, chunk_idx + 1)
+            items.extend(sub_items)
+            covered += smaller
+            if len(sub_items) < smaller:
+                break  # 데이터 끝
+        return items
 
 
 def parse_items(root: ET.Element):
@@ -109,36 +147,21 @@ def fetch_all_items(service_key: str, num_of_rows: int, cache_path: str):
     if cached_pages:
         print(f"캐시에서 {len(cached_pages)}개 페이지 이어받기 감지")
 
-    if 1 in cached_pages:
-        first_root = None
-        total_count = None
-    else:
-        first_root = fetch_page(service_key, 1, num_of_rows)
-        result_code = get_result_code(first_root)
-        if result_code not in ("", "00"):
-            msg_el = first_root.find(".//resultMsg")
-            msg = msg_el.text if msg_el is not None else "알 수 없는 오류"
-            raise RuntimeError(f"API 오류 (resultCode={result_code}): {msg}")
-        total_count = get_total_count(first_root)
-        page_items = parse_items(first_root)
-        append_cache(cache_path, 1, page_items)
-        cached_pages[1] = page_items
-        print(f"totalCount={total_count}, page 1 수집: {len(page_items)}건")
-
-    if total_count is None:
-        # 캐시에 이미 1페이지가 있는 경우, totalCount 파악을 위해 재조회하지 않고
-        # 캐시된 페이지 수 기준으로 마지막 페이지까지 순차 진행 후 빈 응답에서 멈춘다.
-        # 안전하게 다시 1페이지를 조회해 totalCount만 얻는다.
-        probe_root = fetch_page(service_key, 1, num_of_rows)
-        total_count = get_total_count(probe_root)
-
+    probe_root = fetch_page_raw(service_key, 1, 1)
+    result_code = get_result_code(probe_root)
+    if result_code not in ("", "00"):
+        msg_el = probe_root.find(".//resultMsg")
+        msg = msg_el.text if msg_el is not None else "알 수 없는 오류"
+        raise RuntimeError(f"API 오류 (resultCode={result_code}): {msg}")
+    total_count = get_total_count(probe_root)
     total_pages = (total_count + num_of_rows - 1) // num_of_rows if total_count else 1
+    print(f"totalCount={total_count}, 총 {total_pages}페이지")
 
-    for page_no in range(2, total_pages + 1):
+    for page_no in range(1, total_pages + 1):
         if page_no in cached_pages:
             continue
-        root = fetch_page(service_key, page_no, num_of_rows)
-        page_items = parse_items(root)
+        offset = (page_no - 1) * num_of_rows
+        page_items = fetch_range_items(service_key, offset, num_of_rows, num_of_rows)
         append_cache(cache_path, page_no, page_items)
         cached_pages[page_no] = page_items
         collected = sum(len(v) for k, v in cached_pages.items() if k <= page_no)
