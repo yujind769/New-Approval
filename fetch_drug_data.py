@@ -3,9 +3,9 @@
 공공데이터포털 - 의약품제품허가정보 서비스(DrugPrdtPrmsnInfoService07) 조회 스크립트
 
 전체 페이지를 순회하며 데이터를 수집한 뒤,
-- SPCLTY_PBLC == "일반의약품"
+- ETC_OTC_CODE == "일반의약품" (전문/일반 구분 필드. 응답에 SPCLTY_PBLC 필드는 존재하지 않음)
 - ITEM_PERMIT_DATE 가 "202607" 로 시작
-조건에 맞는 항목만 골라 엑셀 파일(ITEM_NAME/ENTP_NAME/ITEM_PERMIT_DATE/ITEM_INGR_NAME)로 저장한다.
+조건에 맞는 항목만 골라 엑셀 파일(ITEM_NAME/ENTP_NAME/ITEM_PERMIT_DATE/MAIN_ITEM_INGR)로 저장한다.
 
 페이지별로 수집한 원본 데이터를 --cache 경로에 JSON Lines로 즉시 저장하므로,
 네트워크 오류 등으로 중간에 중단되어도 다시 실행하면 이미 받은 페이지는
@@ -176,7 +176,7 @@ def fetch_all_items(service_key: str, num_of_rows: int, cache_path: str):
 def filter_items(items):
     filtered = []
     for it in items:
-        if it.get("SPCLTY_PBLC") == TARGET_CLASS and it.get("ITEM_PERMIT_DATE", "").startswith(TARGET_PERMIT_PREFIX):
+        if it.get("ETC_OTC_CODE") == TARGET_CLASS and it.get("ITEM_PERMIT_DATE", "").startswith(TARGET_PERMIT_PREFIX):
             filtered.append(it)
     return filtered
 
@@ -194,7 +194,7 @@ def write_excel(items, out_path: str):
             it.get("ITEM_NAME", ""),
             it.get("ENTP_NAME", ""),
             it.get("ITEM_PERMIT_DATE", ""),
-            it.get("ITEM_INGR_NAME", ""),
+            it.get("MAIN_ITEM_INGR", ""),
         ])
 
     widths = [40, 30, 14, 50]
