@@ -20,6 +20,7 @@ item_permit_date 파라미터(YYYYMM 6자리)로 서버측에서 해당 허가�
 """
 import argparse
 import datetime
+import re
 import sys
 import time
 import urllib.parse
@@ -118,6 +119,18 @@ def filter_items(items, etc_otc_code: str):
     return [it for it in items if it.get("ETC_OTC_CODE") == etc_otc_code]
 
 
+INGR_CODE_PREFIX_RE = re.compile(r"^\[[^\]]*\]")
+
+
+def clean_ingredient_names(raw: str) -> str:
+    """MAIN_ITEM_INGR의 '[M223062]브롬헥신염산염|[M223211]...' 형식에서
+    성분 코드를 제거하고 ', '로 구분된 성분명만 남긴다."""
+    if not raw:
+        return ""
+    names = [INGR_CODE_PREFIX_RE.sub("", part).strip() for part in raw.split("|")]
+    return ", ".join(name for name in names if name)
+
+
 def write_excel(items, out_path: str, sheet_title: str):
     wb = Workbook()
     ws = wb.active
@@ -131,7 +144,7 @@ def write_excel(items, out_path: str, sheet_title: str):
             it.get("ITEM_NAME", ""),
             it.get("ENTP_NAME", ""),
             it.get("ITEM_PERMIT_DATE", ""),
-            it.get("MAIN_ITEM_INGR", ""),
+            clean_ingredient_names(it.get("MAIN_ITEM_INGR", "")),
         ])
 
     widths = [40, 30, 14, 50]
