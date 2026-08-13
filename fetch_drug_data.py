@@ -8,8 +8,7 @@ item_permit_date 파라미터(YYYYMM 6자리)로 서버측에서 해당 허가�
 이전 방식보다 훨씬 빠르고, 매월 반복 실행하기에도 적합하다.
 
 받아온 월별 데이터 중 ETC_OTC_CODE(전문/일반 구분)가 지정한 값과 일치하는
-항목만 골라 엑셀 파일(ITEM_NAME/ENTP_NAME/ITEM_PERMIT_DATE/MAIN_ITEM_INGR)로
-저장한다.
+항목만 골라 엑셀 파일(제품명/업체명/허가일자/주성분/포장단위)로 저장한다.
 
 사용법:
     python3 fetch_drug_data.py [--year-month YYYYMM] [--etc-otc-code 일반의약품]
@@ -136,7 +135,7 @@ def write_excel(items, out_path: str, sheet_title: str):
     ws = wb.active
     ws.title = sheet_title[:31]  # 엑셀 시트명 31자 제한
 
-    headers = ["제품명", "업체명", "허가일자", "주성분"]
+    headers = ["제품명", "업체명", "허가일자", "주성분", "포장단위"]
     ws.append(headers)
 
     for it in items:
@@ -145,9 +144,10 @@ def write_excel(items, out_path: str, sheet_title: str):
             it.get("ENTP_NAME", ""),
             it.get("ITEM_PERMIT_DATE", ""),
             clean_ingredient_names(it.get("MAIN_ITEM_INGR", "")),
+            it.get("PACK_UNIT", ""),
         ])
 
-    widths = [40, 30, 14, 50]
+    widths = [40, 30, 14, 50, 40]
     for col_idx, width in enumerate(widths, start=1):
         ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = width
 
