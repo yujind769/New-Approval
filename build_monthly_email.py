@@ -57,7 +57,7 @@ def main():
 
     subject, body, total = render_email(args.source, args.year_month)
 
-    attachment_out = args.attachment_out or f"CHC1_리포트_{args.year_month}.xlsx"
+    attachment_out = args.attachment_out or f"OTC 신규 품목허가현황_{args.year_month}.xlsx"
     n = eer.build_email_report(args.source, attachment_out, args.year_month)
 
     print("=== SUBJECT ===")
