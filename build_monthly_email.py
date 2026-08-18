@@ -5,9 +5,10 @@
 Gmail MCP 도구는 Claude 세션 안에서만 호출 가능하므로, 이 스크립트는
 제목/본문/첨부파일 경로까지만 준비한다.
 
-[CHC1 분류 별 허가 건수] 굵게, 하단 발신전용 안내 문구(작은 회색 글씨)는
-일반 텍스트로 표현이 안 되므로 HTML 본문(htmlBody)에만 적용된다. 발송 시
-body(텍스트)는 HTML을 지원하지 않는 클라이언트용 대체본으로 함께 쓴다.
+HTML 본문은 <p> 태그(기본 여백 때문에 줄간격이 벌어져 보임) 대신,
+텍스트 버전과 완전히 동일한 줄 단위(<br>)로 그대로 옮겨서 두 버전의
+줄바꿈/여백이 항상 일치하도록 한다. [CHC1 분류 별 허가 건수] 줄만 굵게,
+마지막 안내문구 줄만 작은 회색 글씨로 스타일을 얹는다.
 
 사용법:
     python3 build_monthly_email.py --source CHC1_분류_202607.xlsx --year-month 202607
@@ -22,35 +23,14 @@ import export_email_report as eer
 
 SUBJECT_TEMPLATE = "[공유] {year}년 {month}월 OTC 품목허가현황 공유의 건"
 
-BODY_TEMPLATE = """안녕하세요, CH개발기획팀 AI봇입니다.
-
-{year}년 {month}월 OTC 품목허가현황 공유드립니다.
-{month}월 OTC 신규 허가 건수는 총 {total}건입니다.
-
-
-[CHC1 분류 별 허가 건수]
-{breakdown}
-"""
-
-BODY_FONT_SIZE_PT = 14
-FOOTER_FONT_SIZE_PT = BODY_FONT_SIZE_PT - 2
+BODY_FONT_SIZE_PT = 11
+FOOTER_FONT_SIZE_PT = 9
 FOOTER_COLOR = "#888888"
+HEADING_LINE = "[CHC1 분류 별 허가 건수]"
 FOOTER_TEXT = (
     "⚠️ 본 메일은 발신 전용으로 자동 발송되었습니다(회신 불가). "
     "시스템 문의: CH개발기획팀 장유진 <yujin00@daewoong.co.kr>"
 )
-
-HTML_TEMPLATE = """\
-<div style="font-family:'나눔고딕',sans-serif;font-size:{body_size}pt;color:#000000;">
-<p>안녕하세요, CH개발기획팀 AI봇입니다.</p>
-<p>{year}년 {month}월 OTC 품목허가현황 공유드립니다.<br>
-{month}월 OTC 신규 허가 건수는 총 {total}건입니다.</p>
-<p><b>[CHC1 분류 별 허가 건수]</b><br>
-{breakdown_html}</p>
-<hr style="border:none;border-top:1px solid #dddddd;margin:24px 0;">
-<p style="font-size:{footer_size}pt;color:{footer_color};">{footer_text}</p>
-</div>
-"""
 
 
 def _breakdown(source_path: str):
@@ -66,22 +46,43 @@ def _breakdown(source_path: str):
     return total, lines
 
 
+def _body_lines(year: str, month: str, total: int, breakdown_lines: list[str]) -> list[str]:
+    """본문을 줄 단위 리스트로 만든다 (텍스트/HTML 버전이 항상 같은 줄 구조를 쓰도록)."""
+    return [
+        "안녕하세요, CH개발기획팀 AI봇입니다.",
+        "",
+        f"{year}년 {month}월 OTC 품목허가현황 공유드립니다.",
+        f"{month}월 OTC 신규 허가 건수는 총 {total}건입니다.",
+        "",
+        "",
+        HEADING_LINE,
+        *breakdown_lines,
+        "",
+        FOOTER_TEXT,
+    ]
+
+
 def render_email(source_path: str, year_month: str):
-    total, lines = _breakdown(source_path)
+    total, breakdown_lines = _breakdown(source_path)
     year, month = year_month[:4], str(int(year_month[4:6]))
+    lines = _body_lines(year, month, total, breakdown_lines)
 
     subject = SUBJECT_TEMPLATE.format(year=year, month=month)
-    body = BODY_TEMPLATE.format(year=year, month=month, total=total, breakdown="\n".join(lines))
+    body = "\n".join(lines) + "\n"
 
-    html_body = HTML_TEMPLATE.format(
-        year=year,
-        month=month,
-        total=total,
-        breakdown_html="<br>\n".join(html.escape(line) for line in lines),
-        body_size=BODY_FONT_SIZE_PT,
-        footer_size=FOOTER_FONT_SIZE_PT,
-        footer_color=FOOTER_COLOR,
-        footer_text=html.escape(FOOTER_TEXT),
+    html_lines = []
+    for line in lines:
+        escaped = html.escape(line) if line else "&nbsp;"
+        if line == HEADING_LINE:
+            escaped = f"<b>{escaped}</b>"
+        elif line == FOOTER_TEXT:
+            escaped = f'<span style="font-size:{FOOTER_FONT_SIZE_PT}pt;color:{FOOTER_COLOR};">{escaped}</span>'
+        html_lines.append(escaped)
+
+    html_body = (
+        f'<div style="font-family:\'나눔고딕\',sans-serif;font-size:{BODY_FONT_SIZE_PT}pt;color:#000000;">\n'
+        + "<br>\n".join(html_lines)
+        + "\n</div>"
     )
     return subject, body, html_body, total
 
