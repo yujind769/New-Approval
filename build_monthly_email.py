@@ -27,10 +27,11 @@ BODY_FONT_SIZE_PT = 11
 FOOTER_FONT_SIZE_PT = 9
 FOOTER_COLOR = "#888888"
 HEADING_LINE = "[CHC1 분류 별 허가 건수]"
-FOOTER_TEXT = (
-    "⚠️ 본 메일은 발신 전용으로 자동 발송되었습니다(회신 불가). "
-    "시스템 문의: CH개발기획팀 장유진 <yujin00@daewoong.co.kr>"
-)
+DIVIDER = "-" * 40  # 텍스트 버전의 구분선; HTML에서는 이 줄을 <hr>로 치환한다
+FOOTER_LINES = [
+    "⚠️ 본 메일은 발신 전용으로 자동 발송되었습니다(회신 불가).",
+    "✅ 시스템 문의: CH개발기획팀 장유진 <yujin00@daewoong.co.kr>",
+]
 
 
 def _breakdown(source_path: str):
@@ -58,7 +59,8 @@ def _body_lines(year: str, month: str, total: int, breakdown_lines: list[str]) -
         HEADING_LINE,
         *breakdown_lines,
         "",
-        FOOTER_TEXT,
+        DIVIDER,
+        *FOOTER_LINES,
     ]
 
 
@@ -70,18 +72,22 @@ def render_email(source_path: str, year_month: str):
     subject = SUBJECT_TEMPLATE.format(year=year, month=month)
     body = "\n".join(lines) + "\n"
 
-    html_lines = []
-    for line in lines:
+    html_parts = []
+    for i, line in enumerate(lines):
+        if line == DIVIDER:
+            html_parts.append('<hr style="border:none;border-top:1px solid #dddddd;margin:12px 0;">')
+            continue
         escaped = html.escape(line) if line else "&nbsp;"
         if line == HEADING_LINE:
             escaped = f"<b>{escaped}</b>"
-        elif line == FOOTER_TEXT:
+        elif line in FOOTER_LINES:
             escaped = f'<span style="font-size:{FOOTER_FONT_SIZE_PT}pt;color:{FOOTER_COLOR};">{escaped}</span>'
-        html_lines.append(escaped)
+        is_last = i == len(lines) - 1
+        html_parts.append(escaped if is_last else escaped + "<br>")
 
     html_body = (
         f'<div style="font-family:\'나눔고딕\',sans-serif;font-size:{BODY_FONT_SIZE_PT}pt;color:#000000;">\n'
-        + "<br>\n".join(html_lines)
+        + "\n".join(html_parts)
         + "\n</div>"
     )
     return subject, body, html_body, total
