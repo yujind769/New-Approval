@@ -31,8 +31,15 @@ BODY_FONT = Font(name=FONT_NAME, size=10)
 HEADER_FILL = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
 HEADER_ALIGN = Alignment(horizontal="center", vertical="center")
 
-CENTER_COLUMNS = {"제품명", "업체명", "허가일자"}
-WRAP_COLUMNS = {"주성분", "포장단위"}
+# 컬럼별 본문 정렬: (가운데정렬 여부, 줄바꿈 여부)
+COLUMN_ALIGN_SPEC = {
+    "제품명": (True, True),
+    "업체명": (True, False),
+    "허가일자": (True, False),
+    "CHC1코드": (True, False),
+    "주성분": (False, True),
+    "포장단위": (False, True),
+}
 FIXED_WIDTHS = {"주성분": 68, "포장단위": 30}  # 주성분: 기존 45의 1.5배 / 포장단위: 기존 60의 절반
 
 KOREAN_HEAVY_COLUMNS = {"제품명", "업체명", "포장단위"}
@@ -82,12 +89,12 @@ def build_email_report(source_path: str, out_path: str, year_month: str | None =
 
     col_align = {}
     for name in EMAIL_COLUMNS:
-        if name in CENTER_COLUMNS:
-            col_align[name] = Alignment(horizontal="center", vertical="center")
-        elif name in WRAP_COLUMNS:
-            col_align[name] = Alignment(wrap_text=True, vertical="top")
-        else:
-            col_align[name] = Alignment(vertical="top")
+        centered, wrapped = COLUMN_ALIGN_SPEC[name]
+        col_align[name] = Alignment(
+            horizontal="center" if centered else None,
+            vertical="center" if centered else "top",
+            wrap_text=wrapped,
+        )
 
     for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
         for cell in row:
