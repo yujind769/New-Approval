@@ -50,7 +50,8 @@ def _breakdown(source_path: str):
 def _body_lines(year: str, month: str, total: int, breakdown_lines: list[str]) -> list[str]:
     """본문을 줄 단위 리스트로 만든다 (텍스트/HTML 버전이 항상 같은 줄 구조를 쓰도록)."""
     return [
-        "안녕하세요, CH개발기획팀 AI봇입니다.",
+        "안녕하세요,",
+        "CH개발기획팀 AI봇 - 허가현황 알리미 🤖 입니다.",
         "",
         f"{year}년 {month}월 OTC 품목허가현황 공유드립니다.",
         f"{month}월 OTC 신규 허가 건수는 총 {total}건입니다.",
