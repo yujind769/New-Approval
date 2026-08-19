@@ -9,9 +9,10 @@ CHC1 코드를 매기려고 시도한다.
 분류 단계 (순서대로 시도, 먼저 성공하는 단계를 채택):
   1. 제품명 완전일치           -> 신뢰도 높음
   2. 정규화 성분셋 완전일치     -> 신뢰도 높음
-  3. 한방 복합제 2단계 로직     -> 신뢰도 높음(고전처방명 매칭) / 낮음(미인식 기본값 18)
-  4. 성분셋 유사도(Jaccard) 매칭 -> 신뢰도 중간
-  5. 위 전부 실패              -> CHC1 없음, "LLM판단필요"(신뢰도 낮음) 플래그만 남김
+  3. 외용 진통제 파스/플라스타 네이밍 휴리스틱 -> 신뢰도 중간
+  4. 한방 복합제 2단계 로직     -> 신뢰도 높음(고전처방명 매칭) / 낮음(미인식 기본값 18)
+  5. 성분셋 유사도(Jaccard) 매칭 -> 신뢰도 중간
+  6. 위 전부 실패              -> CHC1 없음, "LLM판단필요"(신뢰도 낮음) 플래그만 남김
      (이 단계는 결정론적 규칙으로 대체할 수 없는, 사람 또는 LLM의 실제 판단이
      필요한 항목이다. 매달 이 스크립트를 돌린 뒤, "LLM판단필요"로 남은 행만
      남고 채워 넣는 반자동 워크플로를 전제로 한다.)
@@ -19,6 +20,13 @@ CHC1 코드를 매기려고 시도한다.
 한방 복합제 판별은 성분명(영문)이 뿌리/줄기/열매 등 생약재 특유의 단어로만
 구성돼 있는지를 휴리스틱으로 판단한다. 저명 처방명 목록(KNOWN_HERBAL_FORMULAS)은
 발견되는 대로 계속 추가한다.
+
+'파스'/'플라스타' 네이밍은 흔히 CHC1의 49_PLASTERS(첩부제)로 오인하기 쉽지만,
+참조데이터상 이 네이밍의 외용 진통소염 제품(캄파/멘톨/살리실산 계열)은 예외 없이
+02_PAIN RELIEF로 분류돼 있다 -- 49_PLASTERS는 티눈/각질 제거, 상처케어(액상밴드)
+등 진통과 무관한 첩부제 전용 카테고리다. dl-/l- 이성질체 접두사 때문에 성분셋이
+참조데이터와 문자열 그대로 일치하지 않아 아래 4/5단계에서 놓치는 경우가 많아
+이름 기반 휴리스틱을 성분셋 매칭보다 먼저 시도한다.
 """
 import re
 from collections import Counter, defaultdict
@@ -83,6 +91,26 @@ def classify_herbal(product_name: str, sheet2_rows):
         "낮음",
         "학습자료에서 처방명을 찾지 못함 - 검수 필요",
     )
+
+
+# --- 외용 진통제 파스/플라스타 판별 ---
+
+PATCH_NAME_KEYWORDS = ("파스", "플라스타", "카타플라스마")
+TOPICAL_ANALGESIC_KEYWORDS = {
+    "CAMPHOR", "MENTHOL", "MENTHA", "SALICYL", "CAPSICUM", "CAPSAICIN",
+    "NONIVAMIDE", "FELBINAC", "KETOPROFEN", "DICLOFENAC", "IBUPROFEN",
+    "PIROXICAM", "INDOMETHACIN", "FLURBIPROFEN", "LOXOPROFEN",
+    "HYDROXYTOLUIC", "THYMOL", "NICOTINIC",
+}
+
+
+def is_pain_relief_patch(product_name: str, main_ingr_eng: str) -> bool:
+    """제품명에 파스/플라스타류 표현이 있고 외용 진통소염 성분이 주성분이면
+    49_PLASTERS가 아니라 02_PAIN RELIEF로 봐야 하는 경우를 잡아낸다."""
+    if not any(kw in product_name for kw in PATCH_NAME_KEYWORDS):
+        return False
+    eng_upper = (main_ingr_eng or "").upper()
+    return any(kw in eng_upper for kw in TOPICAL_ANALGESIC_KEYWORDS)
 
 
 # --- 성분명 정규화 (염/제형/농도 표기 차이 흡수) ---
@@ -179,11 +207,21 @@ def classify_item(item: dict, ref: Reference):
         ratio = cnt / sum(counter.values())
         return top_chc, "정규화 성분일치", "높음" if ratio >= 0.9 else "중간", f"학습자료 {sum(counter.values())}건 중 {ratio:.0%} 일치"
 
-    # 3. 한방 복합제 2단계 로직
+    # 3. 외용 진통제 파스/플라스타 네이밍 휴리스틱
+    if is_pain_relief_patch(name, eng):
+        return (
+            "02_PAIN RELIEF",
+            "파스/플라스타 네이밍 휴리스틱",
+            "중간",
+            "제품명에 파스/플라스타 계열 표현 + 캄파/멘톨/살리실산 등 외용진통성분 -- "
+            "49_PLASTERS(첩부제)는 티눈/상처케어 전용이며, 참조데이터상 파스류는 전부 02_PAIN RELIEF",
+        )
+
+    # 4. 한방 복합제 2단계 로직
     if is_herbal_complex(eng):
         return classify_herbal(name, ref.sheet2_rows)
 
-    # 4. 성분셋 유사도(Jaccard) 매칭
+    # 5. 성분셋 유사도(Jaccard) 매칭
     best_score = 0.0
     best_chcs = []
     for s, counter in ref.ingr_set_to_chc.items():
